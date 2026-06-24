@@ -50,7 +50,7 @@ pip install pandas numpy matplotlib scipy scikit-learn statsmodels
 ## Dataset Selection Note
 
 The originally selected dataset (*Ecommerce Consumer Behavior Analysis Data*, Kaggle) was a fully synthetic dataset with variables generated independently — all pairwise correlations |r| < 0.11 and KMeans silhouette ≈ 0. It was replaced with the Retailrocket dataset, which is real clickstream data with genuine correlation structure (r = 0.29 between core variables; silhouette = 0.50 at k=4).
-
+item_properties_part1.csv and item_properties_part2.csv are not included in this submission due to file size constraints. Download from the same Kaggle dataset package.
 ---
 
 ## Key Data Processing Decisions
