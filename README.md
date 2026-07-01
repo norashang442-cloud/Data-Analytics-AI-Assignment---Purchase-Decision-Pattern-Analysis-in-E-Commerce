@@ -50,7 +50,9 @@ pip install pandas numpy matplotlib scipy scikit-learn statsmodels
 ## Dataset Selection Note
 
 The originally selected dataset (*Ecommerce Consumer Behavior Analysis Data*, Kaggle) was a fully synthetic dataset with variables generated independently — all pairwise correlations |r| < 0.11 and KMeans silhouette ≈ 0. It was replaced with the Retailrocket dataset, which is real clickstream data with genuine correlation structure (r = 0.29 between core variables; silhouette = 0.50 at k=4).
-item_properties_part1.csv and item_properties_part2.csv are not included in this submission due to file size constraints. Download from the same Kaggle dataset package.
+
+`item_properties_part1.csv` and `item_properties_part2.csv` are not included in this submission due to file size constraints. Download from the same Kaggle dataset package: [Retailrocket E-Commerce Dataset](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset)
+
 ---
 
 ## Key Data Processing Decisions
@@ -87,6 +89,14 @@ No field in `item_properties` is explicitly labelled "price". Property 790 was i
 
 `log_unique_items_viewed` and `log_total_purchases` have r = 0.94 — behaviourally inevitable (more purchases → more items seen). `log_unique_items_viewed` was dropped from clustering inputs; `log_total_purchases` retained as the more directly interpretable experience proxy.
 
+### Visitor-Level Non-Independence Correction
+
+18,738 decisions come from 11,719 visitors (~1.6 decisions/visitor), so rows are not fully independent — a single visitor can contribute several correlated decisions. Three supervised-learning steps were corrected to account for this (K-Means and the Kruskal-Wallis validation tests do not use a train/test split, so they are not affected in the same way):
+
+- **OLS regression**: `.fit(cov_type='cluster', cov_kwds={'groups': visitorid})` replaces the default i.i.d. standard errors. Coefficients are unchanged (`cov_type` only affects SE calculation); `has_addtocart`'s p-value moves slightly from 0.833/0.881 to 0.867/0.904 (still not significant), all other variables remain p<0.001.
+- **5-fold CV model comparison** (OLS/Ridge/Lasso/RandomForest): `KFold` replaced with `GroupKFold` keyed on `visitorid`, so a visitor's decisions cannot span both the training and validation fold. R² shifts by ≤0.002 across all four models (e.g. RandomForest 0.5396 → 0.5375) — the original random-split estimates were only marginally optimistic.
+- **Decision tree train/test split**: `train_test_split(..., stratify=y)` replaced with `StratifiedGroupKFold` (grouped by `visitorid`, one fold used as the test set), preserving cluster proportions without letting a visitor appear in both train and test. Test accuracy actually rose (91.3% → 93.4%) and train/test accuracy converged, indicating the original split was not meaningfully inflated; the tree also stopped using `total_purchases` (importance 0.050 → 0.000) since the random split had let the model exploit visitor identity as an implicit proxy for it. Per-class recall/precision were also computed for the first time (previously only overall accuracy was reported) — notably Cluster 3 (no-add-to-cart) recall rose from 78.3% (random split) to 100% (grouped split), confirming the "~9% coverage ceiling" finding is not an artefact of visitor leakage.
+
 ---
 
 ## Excluded Analytical Directions
@@ -108,4 +118,18 @@ No field in `item_properties` is explicitly labelled "price". Property 790 was i
 | events3.csv | Decision-level features including view_interval_mean and first_trans | 18,738    |
 | events4.csv | Main analytical dataset; view_interval_mean dropped                  | 18,738    |
 | events5.csv | events4 + quadrant label + cluster label + price + log_price         | 18,738    |
+
+---
+
+## Quantifying Recommendation Trade-offs (Targeting Efficiency)
+
+The business recommendations (streamline path for high-experience decisions, deploy trust content for high-friction decisions) were originally qualitative, with no cost-benefit backing. Unlike a binary classification problem (churn/default) with a natural false-positive/false-negative cost matrix, this project's recommendations rest on unsupervised segmentation, so a cost-matrix framing does not map cleanly onto it. Instead, targeting efficiency — how precisely an intervention rule reaches its intended segment — is quantified using the per-class precision/recall from the decision tree (see above), without inventing any cost or revenue figures the dataset does not support:
+
+| Target cluster | Recall | Precision | Meaning |
+| --- | --- | --- | --- |
+| C2 High-friction (trust content) | 89.4% | 93.3% | 93.3% of decisions targeted are genuinely high-friction; 89.4% of true high-friction decisions are reached |
+| C0 High-experience (streamlined path) | 97.6% | 84.2% | 97.6% of decisions that should be left alone are correctly identified; the 15.8% precision error is a false "streamline" flag on fast Lightweight decisions, a low-risk mistake |
+| C3 No-add-to-cart (structural blind spot) | 100.0% | 95.3% | Confirms the ~9% coverage-ceiling estimate is not an artefact of misclassification |
+
+This reframes the recommendations from "spread one intervention to 100% of add-to-cart events" to "target ~1/8–1/4 of decisions with segment-specific content at 84–93% precision" — a quantified reach/precision trade-off rather than a dollar-cost estimate, which is the honest limit of what an observational (non-experimental) dataset supports. Converting this into an expected-cost model would require real intervention cost and conversion-uplift data, which is out of scope (see Future Work in Note2.md).
 | price.csv   | Inferred price snapshots from item_properties (property 790)         | 1,790,512 |
